@@ -8,19 +8,34 @@ def read_file(file_name: str) -> Any:
         with open(file_name, "r", encoding="utf-8") as file:
             content = json.load(file)
     except FileNotFoundError:
-        print(f"Error: file not found: {file_name}", file=sys.stderr)
+        print(
+            f"Error: file not found: {file_name}",
+            file=sys.stderr
+        )
         sys.exit(1)
     except PermissionError:
-        print(f"Error: could not read {file_name}: permission denied", file=sys.stderr)
+        print(
+            f"Error: could not read {file_name}: permission denied",
+            file=sys.stderr
+        )
         sys.exit(1)
     except IsADirectoryError:
-        print(f"Error: could not read {file_name}: is a directory, not a file", file=sys.stderr)
+        print(
+            f"Error: could not read {file_name}: is a directory, not a file",
+            file=sys.stderr
+        )
         sys.exit(1)
     except UnicodeDecodeError:
-        print(f"Error: {file_name} is not valid UTF-8 text", file=sys.stderr)
+        print(
+            f"Error: {file_name} is not valid UTF-8 text",
+            file=sys.stderr
+        )
         sys.exit(1)
     except json.JSONDecodeError as e:
-        print(f"Error: invalid JSON in {file_name}: {e}", file=sys.stderr)
+        print(
+            f"Error: invalid JSON in {file_name}: {e}",
+            file=sys.stderr
+        )
         sys.exit(1)
     return content
 
@@ -33,7 +48,3 @@ def parsing_prompts(file_name: str) -> list[str]:
             if key == "prompt":
                 prompts.append(value)
     return prompts
-
-
-if __name__ == "__main__":
-    print(parsing_prompts("data/input/function_calling_tests.json"))
