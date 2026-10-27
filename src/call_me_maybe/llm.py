@@ -32,31 +32,38 @@ def main() -> None:
         + '"fn_add_numbers", "parameters": {"a": 2.0, "b": 3.0} }\n\n'
         + "Functions list:\n"
         + str(functions) + "\n\n"
+        + '{"prompt": "' + prompts[2] + '", "name": "'
     )  # put instructions in a text file maybe? and read it
 
-    output = '{"prompt": "' + prompts[0] + '", "name": "'
-    total = instructions + output
+    output = instructions
+    total = output
     next_letters = ""
-    while '"' not in next_letters:
+    function_name = ""
+    while '"' not in function_name:
         ids = llm.encode(total)[0].tolist()
         logits = llm.get_logits_from_input_ids(ids)
         logits = np.array(logits)
         next_id = np.argmax(logits)
         next_letters = llm.decode(next_id)
+        function_name = function_name + next_letters
         total = total + next_letters
     # nog iets met if > 1 in next_letters dat je dan iets anders moet doen om te splitten
-    i = total.rfind('"')
-    total = total[:i + 1] + ', "parameters": '
+    function_name = function_name.split('"')[0]
+    output = output + function_name + '", "parameters": {'
+    total = output
     next_letters = ""
+    parameters = ""
     while '}' not in next_letters:
         ids = llm.encode(total)[0].tolist()
         logits = llm.get_logits_from_input_ids(ids)
         logits = np.array(logits)
         next_id = np.argmax(logits)
         next_letters = llm.decode(next_id)
+        parameters = parameters + next_letters
         total = total + next_letters
-    i = total.rfind('}')
-    total = total[:i + 1] + ' }'
+    parameters = parameters.split('}')[0]
+    output = output + function_name + "} },"
+    total = output
     print(total)
     # hierna de output er nog uithalen door te splitten op iets
     # misschien nog iets toevoegen voor de output zodat dat makkelijker is
