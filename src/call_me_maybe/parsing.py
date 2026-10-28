@@ -48,3 +48,16 @@ def parsing_prompts(file_name: str) -> list[str]:
             if key == "prompt":
                 prompts.append(value)
     return prompts
+
+
+def parsing_functions(file_name: str) -> dict[str | dict]:
+    functions = {}
+    functions_list = read_file(file_name)
+    for item in functions_list:
+        name = item["name"]
+        parameters = {}
+        for key, value in item["parameters"].items():
+            ptype = value["type"]
+            parameters[key] = ptype
+        functions[name] = parameters
+    return functions
