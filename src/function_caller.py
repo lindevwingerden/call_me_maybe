@@ -28,7 +28,7 @@ class FunctionCaller:
             + "Prompt:\n"
         )
 
-    def get_ids_valid_numbers(self) -> dict:
+    def get_ids_valid_numbers(self) -> list[int]:
         vocab_file = read_file(self._llm.get_path_to_vocab_file())
         chars_valid_numbers = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", ".", ",", "}"]
         ids_valid_numbers = {}
@@ -75,10 +75,12 @@ class FunctionCaller:
     
     def get_parameter_number(self, instructions: str) -> tuple[str, str]:
         llm = self._llm
+        print("in get_parameter_number: getting valid numbers....")
         if len(self._ids_valid_numbers) < 1:
             self._ids_valid_numbers = self.get_ids_valid_numbers()
         ids_parameter = []
         ids_total = llm.encode(instructions)[0].tolist()
+        print("in get_parameter_number: going into while loop....")
         while (
             llm.encode(",") not in ids_parameter
             and llm.encode("}") not in ids_parameter
@@ -91,12 +93,14 @@ class FunctionCaller:
             next_id = np.argmax(masked)
             ids_parameter.append(next_id)
             ids_total.append(next_id)
+            print(llm.decode(ids_parameter))
         parameter = llm.decode(ids_parameter)
         if "," in parameter:
             parameter = parameter.split(",")[0]
         if "}" in parameter:
             parameter = parameter.split("}")[0]
         instructions = instructions + parameter
+        print("in get_parameter_number: end of function")
         return parameter, instructions
 
     def get_parameter_bool(self, instructions: str) -> tuple[str, str]:
@@ -130,7 +134,10 @@ class FunctionCaller:
         instructions = instructions + '"'
         ids_parameter = []
         ids_total = llm.encode(instructions)[0].tolist()
-        while llm.encode('"') not in ids_parameter:
+        while (
+            llm.encode('"') not in ids_parameter
+            and len(ids_parameter) < 50
+        ):
             logits = np.array(llm.get_logits_from_input_ids(ids_total))
             next_id = np.argmax(logits)
             ids_parameter.append(next_id)
@@ -142,14 +149,18 @@ class FunctionCaller:
 
     def get_parameters(self, instructions: str, function_name: str) -> str:
         instructions = instructions + '", "parameters": {'
+        parameters = ""
         parameters_dict = self._functions_crop[function_name]
-        for key, value in parameters_dict:
+        print(f"in get_parameters: parameters_dict: {parameters_dict}")
+        for key, value in parameters_dict.items():
+            print(f"in get_parameters: key, value: {key}, {value}")
             parameters = parameters + f'"{key}": '
             instructions = instructions + f'"{key}": ' # aan al deze dubbele dingen moet ik nog wat doen
             if value == "number":
                 parameter, instructions = self.get_parameter_number(instructions)
                 parameters = parameters + parameter
-            if value == "boolean":
+                print(f"in get_parameters: parameter: {parameter}")
+            elif value == "boolean":
                 parameter, instructions = self.get_parameter_bool(instructions)
                 parameters = parameters + parameter
             else:
@@ -157,8 +168,13 @@ class FunctionCaller:
                 parameters = parameters + parameter
             parameters = parameters + ", "
             instructions = instructions + ", "
+            print(parameter)
         parameters = parameters[:-2] + "}"
         return parameters
+
+    def get_output(self, function_name: str, parameters: str) -> str:
+        # Misschien later nog maken dat ie m direct naar de output file stuurt, en dan -> None
+        # Nee daar maak ik een losse functie voor als de hele output compleet is
 
 
 def main() -> None:
@@ -166,7 +182,9 @@ def main() -> None:
 
     instructions = fc.create_instructions_for_prompt(0)
     function_name, instructions = fc.get_function_name(instructions)
+    print(function_name)
     parameters = fc.get_parameters(instructions, function_name)
+    print(instructions, parameters)
 
 
 
