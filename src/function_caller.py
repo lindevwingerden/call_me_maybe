@@ -1,6 +1,6 @@
 from llm_sdk import Small_LLM_Model
 import numpy as np
-from parsing import read_file, parsing_prompts, parsing_functions
+from src.parsing import read_file, parsing_prompts, parsing_functions
 
 
 class FunctionCaller:
@@ -13,9 +13,9 @@ class FunctionCaller:
         self.prompts = parsing_prompts(path_prompts)
         self._functions_total = read_file(path_functions)
         self._functions_crop = parsing_functions(path_functions)
-        self._ids_valid_functions = []
-        self._ids_valid_numbers = []
-        self._ids_valid_bools = []
+        self._ids_valid_functions: list[list[int]] = []
+        self._ids_valid_numbers: list[int] = []
+        self._ids_valid_bools: list[list[int]] = []
         self._instructions = (
             "For the following prompt, choose the correct function name "
             + "from the functions list, select the parameters that belong to "
@@ -40,7 +40,7 @@ class FunctionCaller:
                     break
             if valid:
                 ids_valid_numbers[key] = value
-        return ids_valid_numbers.values()
+        return [int(value) for value in ids_valid_numbers.values()]
     
     def create_instructions_for_prompt(self, prompt: str) -> str:
         instructions = self._instructions + '{"prompt": "' + prompt
@@ -52,7 +52,7 @@ class FunctionCaller:
             self._ids_valid_functions = [llm.encode(name + '"')[0].tolist() for name in self._functions_crop]
         instructions = instructions  + '", "name": "'
         id_nb = 0
-        ids_function_name = []
+        ids_function_name: list[int] = []
         ids_total = llm.encode(instructions)[0].tolist()
         ids_functions = self._ids_valid_functions.copy()
         while '"' not in llm.decode(ids_function_name):
@@ -64,9 +64,10 @@ class FunctionCaller:
             next_id = int(np.argmax(masked))
             ids_function_name.append(next_id)
             ids_total.append(next_id)
-            for function in ids_functions:
-                if function[id_nb] != next_id:
-                    ids_functions.remove(function)
+            ids_functions = [function for function in ids_functions if function[id_nb == next_id]]
+            # for function in ids_functions:
+            #     if function[id_nb] != next_id:
+            #         ids_functions.remove(function)
             id_nb = id_nb + 1
         function_name = llm.decode(ids_function_name)
         function_name = function_name.split('"')[0]
@@ -77,7 +78,7 @@ class FunctionCaller:
         llm = self._llm
         if len(self._ids_valid_numbers) < 1:
             self._ids_valid_numbers = self.get_ids_valid_numbers()
-        ids_parameter = []
+        ids_parameter: list[int] = []
         ids_total = llm.encode(instructions)[0].tolist()
         while (
             "," not in llm.decode(ids_parameter)
@@ -105,7 +106,7 @@ class FunctionCaller:
         if len(self._ids_valid_bools) < 1:
             self._ids_valid_bools = [llm.encode(boolean)[0].tolist() for boolean in ["True,", "False,"]]
         id_nb = 0
-        ids_parameter = []
+        ids_parameter: list[int] = []
         ids_total = llm.encode(instructions)[0].tolist()
         ids_bools = self._ids_valid_bools.copy()
         while "," not in llm.decode(ids_parameter):
@@ -130,7 +131,7 @@ class FunctionCaller:
     def get_parameter_string(self, instructions: str) -> tuple[str, str]:
         llm = self._llm
         instructions = instructions + '"'
-        ids_parameter = []
+        ids_parameter: list[int] = []
         ids_total = llm.encode(instructions)[0].tolist()
         while (
             '"' not in llm.decode(ids_parameter)
@@ -145,9 +146,9 @@ class FunctionCaller:
         instructions = instructions + parameter
         return parameter, instructions
 
-    def get_parameters(self, instructions: str, function_name: str) -> dict:
+    def get_parameters(self, instructions: str, function_name: str) -> dict[str, float | bool | str]:
         instructions = instructions + '", "parameters": {'
-        parameters = {}
+        parameters: dict[str, float | bool | str] = {}
         valid_parameters = self._functions_crop[function_name]
         for key, value in valid_parameters.items():
             instructions = instructions + f'"{key}": '
@@ -161,7 +162,7 @@ class FunctionCaller:
             instructions = instructions + ", "
         return parameters
 
-    def append_output(self, output: list, prompt: str, function_name: str, parameters: dict) -> None:
+    def append_output(self, output: list[dict[str, str | dict[str, float | bool | str]]], prompt: str, function_name: str, parameters: dict) -> None:
         current = {}
         current["prompt"] = prompt
         current["name"] = function_name
@@ -174,21 +175,21 @@ class FunctionCaller:
 
 def main() -> None:
     fc = FunctionCaller("data/input/function_calling_tests.json", "data/input/functions_definition.json")
-    output = []
-    for prompt in fc.prompts:
-        instructions = fc.create_instructions_for_prompt(prompt)
-        function_name, instructions = fc.get_function_name(instructions)
-        parameters = fc.get_parameters(instructions, function_name)
-        fc.append_output(output, prompt, function_name, parameters)
-        print(f"Current output: {output}\n")
-    print(output)
+    output: list[dict[str, str | dict[str, float | bool | str]]] = []
+    # for prompt in fc.prompts:
+    #     instructions = fc.create_instructions_for_prompt(prompt)
+    #     function_name, instructions = fc.get_function_name(instructions)
+    #     parameters = fc.get_parameters(instructions, function_name)
+    #     fc.append_output(output, prompt, function_name, parameters)
+    #     print(f"Current output: {output}\n")
+    # print(output)
 
-    # prompt = fc.prompts[2]
-    # instructions = fc.create_instructions_for_prompt(prompt)
-    # function_name, instructions = fc.get_function_name(instructions)
-    # parameters = fc.get_parameters(instructions, function_name)
-    # fc.append_output(output, prompt, function_name, parameters)
-    # print(f"Output: {output}\n")
+    prompt = fc.prompts[2]
+    instructions = fc.create_instructions_for_prompt(prompt)
+    function_name, instructions = fc.get_function_name(instructions)
+    parameters = fc.get_parameters(instructions, function_name)
+    fc.append_output(output, prompt, function_name, parameters)
+    print(f"Output: {output}\n")
 
 
 if __name__ == "__main__":

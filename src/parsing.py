@@ -50,7 +50,7 @@ def parsing_prompts(file_name: str) -> list[str]:
     return prompts
 
 
-def parsing_functions(file_name: str) -> dict[str | dict]:
+def parsing_functions(file_name: str) -> dict[str, dict[str, str]]:
     functions = {}
     functions_list = read_file(file_name)
     for item in functions_list:
