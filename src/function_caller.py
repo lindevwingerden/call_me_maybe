@@ -1,6 +1,7 @@
 import numpy as np
 import json
 import sys
+from pathlib import Path
 from llm_sdk import Small_LLM_Model
 from src.parsing import read_file, parsing_prompts, parsing_functions
 
@@ -203,12 +204,17 @@ class FunctionCaller:
         for key, value in valid_parameters.items():
             instructions = instructions + f'"{key}": '
             param: ParameterType
-            if value == "number":
+            if value == "null":
+                param = None
+                instructions = instructions + "null"
+            elif value == "number":
                 param, instructions = self.get_parameter_number(instructions)
             elif value == "boolean":
                 param, instructions = self.get_parameter_bool(instructions)
-            else:
+            elif value == "string":
                 param, instructions = self.get_parameter_string(instructions)
+            else:
+                pass # nog een goede foutmelding schrijven
             parameters[key] = param
             instructions = instructions + ", "
         return parameters
@@ -230,16 +236,11 @@ class FunctionCaller:
             self,
             output: list[dict[str, str | dict[str, ParameterType]]]
     ) -> None:
-        file_name = self._path_output
+        file_name = Path(self._path_output)
         try:
+            file_name.parent.mkdir(parents=True, exist_ok=True)
             with open(file_name, "w", encoding="utf-8") as f:
                 json.dump(output, f, indent=2)
-        except FileNotFoundError:
-            print(
-                f"Error: output directory does not exist: {file_name}",
-                file=sys.stderr
-            )
-            sys.exit(1)
         except PermissionError:
             print(
                 f"Error: could not write to {file_name}: permission denied",

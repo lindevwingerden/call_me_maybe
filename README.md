@@ -7,5 +7,6 @@
 # Resources
 
 * [Aidan Cooper: A Guide to Structured Generation Using Constrained Decoding](https://www.aidancooper.co.uk/constrained-decoding/)
+* [JSON Data Types](https://www.geeksforgeeks.org/javascript/json-data-types/)
 
 ## AI Usage

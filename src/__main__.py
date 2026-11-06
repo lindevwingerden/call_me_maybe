@@ -6,13 +6,14 @@ def main() -> None:
     path_functions = "data/input/functions_definition.json"
     path_input = "data/input/function_calling_tests.json"
     path_output = "data/output/function_calling_results.json"
-    for argument in sys.argv:
-        if argument.startswith("--functions_definition "):
-            path_functions = argument.split(' ')[1]
-        if argument.startswith("--input "):
-            path_input = argument.split(' ')[1]
-        if argument.startswith("--output "):
-            path_output = argument.split(' ')[1]
+    for i in range(1, len(sys.argv) - 1):
+        if sys.argv[i] == "--functions_definition":
+            path_functions = sys.argv[i + 1]
+        if sys.argv[i] == "--input":
+            path_input = sys.argv[i + 1]
+        if sys.argv[i] == "--output":
+            path_output = sys.argv[i + 1]
+    print(path_functions, path_input, path_output)
     fc = FunctionCaller(path_functions, path_input, path_output)
     fc.call_functions_from_prompts()
 
