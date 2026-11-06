@@ -73,10 +73,10 @@
     "description": "Multiply two numbers and return their product.",
     "parameters": {
       "a": {
-        "type": "number"
+        "type": "integer"
       },
       "b": {
-        "type": "number"
+        "type": "integer"
       }
     },
     "returns": {

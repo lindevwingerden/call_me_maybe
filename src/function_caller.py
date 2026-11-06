@@ -24,6 +24,7 @@ class FunctionCaller:
         self._ids_valid_functions: list[list[int]] = []
         self._ids_valid_numbers: list[int] = []
         self._ids_valid_stops: list[int] = []
+        self._ids_valid_ints: list[int] = []
         self._ids_valid_bools: list[list[int]] = []
         self._instructions = (
             "For the following prompt, choose the correct function name "
@@ -45,6 +46,23 @@ class FunctionCaller:
             parameters = self.get_parameters(instructions, function_name)
             self.append_output(output, prompt, function_name, parameters)
         self.output_to_file(output)
+
+    def get_ids_valid_ints(self) -> tuple[list[int], list[int]]:
+        vocab_file = read_file(self._llm.get_path_to_vocab_file())
+        chars_valid_numbers = [
+            "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
+            "-", ",", "}"
+        ]
+        ids_valid_numbers = {}
+        for key, value in vocab_file.items():
+            valid = True
+            for char in key:
+                if char not in chars_valid_numbers:
+                    valid = False
+                    break
+            if valid:
+                ids_valid_numbers[key] = value
+        return [int(value) for value in ids_valid_numbers.values()]
 
     def get_ids_valid_numbers(self) -> tuple[list[int], list[int]]:
         vocab_file = read_file(self._llm.get_path_to_vocab_file())
@@ -125,7 +143,7 @@ class FunctionCaller:
         while (
             "," not in llm.decode(ids_parameter)
             and "}" not in llm.decode(ids_parameter)
-            and len(ids_parameter) < 12
+            and len(ids_parameter) < 14
         ):
             logits = np.array(llm.get_logits_from_input_ids(ids_total))
             masked = np.full_like(logits, -np.inf)
@@ -144,6 +162,34 @@ class FunctionCaller:
         instructions = instructions + parameter
         parameter_float = float(parameter)
         return parameter_float, instructions
+
+    def get_parameter_int(self, instructions: str) -> tuple[float, str]:
+        llm = self._llm
+        if len(self._ids_valid_ints) < 1:
+            self._ids_valid_ints = self.get_ids_valid_ints()
+        ids_parameter: list[int] = []
+        ids_total = llm.encode(instructions)[0].tolist()
+        valid_ids = self._ids_valid_ints
+        while (
+            "," not in llm.decode(ids_parameter)
+            and "}" not in llm.decode(ids_parameter)
+            and len(ids_parameter) < 12
+        ):
+            logits = np.array(llm.get_logits_from_input_ids(ids_total))
+            masked = np.full_like(logits, -np.inf)
+            for valid_id in valid_ids:
+                masked[valid_id] = logits[valid_id]
+            next_id = int(np.argmax(masked))
+            ids_parameter.append(next_id)
+            ids_total.append(next_id)
+        parameter = llm.decode(ids_parameter)
+        if "," in parameter:
+            parameter = parameter.split(",")[0]
+        if "}" in parameter:
+            parameter = parameter.split("}")[0]
+        instructions = instructions + parameter
+        parameter_int = int(parameter)
+        return parameter_int, instructions
 
     def get_parameter_bool(self, instructions: str) -> tuple[bool, str]:
         llm = self._llm
@@ -209,12 +255,15 @@ class FunctionCaller:
                 instructions = instructions + "null"
             elif value == "number":
                 param, instructions = self.get_parameter_number(instructions)
+            elif value == "integer":
+                param, instructions = self.get_parameter_int(instructions)
             elif value == "boolean":
                 param, instructions = self.get_parameter_bool(instructions)
             elif value == "string":
                 param, instructions = self.get_parameter_string(instructions)
             else:
-                pass # nog een goede foutmelding schrijven
+                pass # nog een goede foutmelding schrijven, of foutmelding in parsing?
+                # en misschien nog iets voor als je een value error krijgt in een van deze ifs?
             parameters[key] = param
             instructions = instructions + ", "
         return parameters
