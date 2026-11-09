@@ -41,6 +41,12 @@ def read_file(file_name: str) -> Any:
             file=sys.stderr
         )
         sys.exit(1)
+    except OSError as e:
+        print(
+            f"Error: could not read {file_name}: {e}",
+            file=sys.stderr
+        )
+        sys.exit(1)
     return content
 
 
@@ -50,25 +56,24 @@ def validate_prompt_list(content: Any) -> None:
     for index, item in enumerate(content):
         if not isinstance(item, dict):
             raise InvalidFileError(
-                f"Item {index} in prompt list is not a dict"
+                f"Item {index} is not a dict"
             )
         if len(item) != 1:
             raise InvalidFileError(
-                f"Item {index} of prompt list has {len(item)} keys, expected 1"
+                f"Item {index} has {len(item)} keys, expected 1"
             )
         for key, value in item.items():
             if key != "prompt":
                 raise InvalidFileError(
-                    'Other key than "prompt" found'
-                    f" in item {index} of prompt list"
+                    f'Other key than "prompt" found in item {index}'
                 )
             if not isinstance(value, str):
                 raise InvalidFileError(
-                    f"Prompt in item {index} of prompt list is not a string"
+                    f"Prompt in item {index} is not a string"
                 )
             if len(value) < 1:
                 raise InvalidFileError(
-                    f"Empty prompt in item {index} of prompt list"
+                    f"Empty prompt in item {index}"
                 )
 
 
@@ -85,58 +90,94 @@ def parsing_prompts(file_name: str) -> list[str]:
 
 def validate_function_list(content: Any) -> None:
     if not isinstance(content, list):
-        raise InvalidFileError("Function definition file does not contain list")
+        raise InvalidFileError(
+            "Function definition file does not contain list"
+        )
+    if len(content) < 1:
+        raise InvalidFileError(
+            "Function list is empty"
+        )
     function_names: list[str] = []
     for index, item in enumerate(content):
         if not isinstance(item, dict):
             raise InvalidFileError(
-                f"Item {index} in function list is not a dict"
+                f"Item {index} is not a dict"
             )
-        if len(item) != 4:
+        valid_keys = {"name", "description", "parameters", "returns"}
+        if item.keys() != valid_keys:
             raise InvalidFileError(
-                f"Item {index} of function list has {len(item)} keys, expected 4"
+                f'Item {index} has invalid keys;'
+                ' expected "name", "description", "parameters", "returns"'
             )
-        valid_keys = ["name", "description", "parameters", "returns"]
-        for key, value in item.items():
-            if key not in valid_keys:
-                raise InvalidFileError(
-                    f"Item {index} of function list has double / invalid key {key}"
-                )
-            else:
-                valid_keys.remove(key)
-                if (key == "name" or key == "description"):
-                    if not isinstance(value, str):
-                        raise InvalidFileError(
-                            f'Value of key "{key}" in item {index} of function list is not a string'
-                        )
-                    if len(value) < 1:
-                        raise InvalidFileError(
-                            f'Value of key "{key}" in item {index} of function list is empty'
-                        )
-                    if key == "name":
-                        if value in function_names:
-                            raise InvalidFileError(
-                                f'Double function name "{value}" in item {index} of function list'
-                            )
-                        else:
-                            function_names.append(value)
-                elif key == "parameters":
-                    if not isinstance(value, dict):
-                        raise InvalidFileError(
-                            f'Value of key "{key}" in item {index} of function list is not a string'
-                        )
-                    for param_key, param_value in value.items():
-                        try:
-                            check_type(param_value)
-                        except InvalidFileError as e:
-                            print(f'Error in function definition file: parameter {param_key} in item {index} of function list has invalid type: {e}', file=sys.stderr)
-                            sys.exit(1)
-                elif key == "returns":
-                    try:
-                        check_type(value)
-                    except InvalidFileError as e:
-                        print(f'Error in function definition file: returns of item {index} of function list have invalid type: {e}', file=sys.stderr)
-                        sys.exit(1)
+        try:
+            check_name(item["name"], function_names)
+            function_names.append(item["name"])
+        except InvalidFileError as e:
+            raise InvalidFileError(
+                f'Item {index} has invalid name: {e}'
+            ) from e
+        try:
+            check_description(item["description"])
+        except InvalidFileError as e:
+            raise InvalidFileError(
+                f'Item {index} has invalid description: {e}'
+            ) from e
+        try:
+            check_parameters(item["parameters"])
+        except InvalidFileError as e:
+            raise InvalidFileError(
+                f'Item {index} has an invalid parameter: {e}'
+            ) from e
+        try:
+            check_type(item["returns"])
+        except InvalidFileError as e:
+            raise InvalidFileError(
+                f"Returns of item {index} have invalid type: {e}"
+            ) from e
+
+
+def check_name(function_name: Any, function_names_list: list[str]) -> None:
+    if not isinstance(function_name, str):
+        raise InvalidFileError(
+            'Function name is not a string'
+        )
+    if len(function_name) < 1:
+        raise InvalidFileError(
+            'Function name is empty'
+        )
+    if function_name in function_names_list:
+        raise InvalidFileError(
+            'Function name already exists'
+        )
+
+
+def check_description(description: Any) -> None:
+    if not isinstance(description, str):
+        raise InvalidFileError(
+            'Description is not a string'
+        )
+    if len(description) < 1:
+        raise InvalidFileError(
+            'Description is empty'
+        )
+
+
+def check_parameters(parameters: Any) -> None:
+    if not isinstance(parameters, dict):
+        raise InvalidFileError(
+            'Parameters are not a dict'
+        )
+    for param_key, param_value in parameters.items():
+        if len(param_key) < 1:
+            raise InvalidFileError(
+                'Parameter name is empty'
+            )
+        try:
+            check_type(param_value)
+        except InvalidFileError as e:
+            raise InvalidFileError(
+                f"Parameter {param_key} has invalid type: {e}"
+            ) from e
 
 
 def check_type(type_dict: Any) -> None:
@@ -158,10 +199,6 @@ def check_type(type_dict: Any) -> None:
             raise InvalidFileError(
                 "Type is not a string"
             )
-        if len(value) < 1:
-            raise InvalidFileError(
-                "Type is empty"
-            )
         if value not in valid_types:
             raise InvalidFileError(
                 f'Type "{value}" is invalid'
@@ -169,7 +206,7 @@ def check_type(type_dict: Any) -> None:
 
 
 def parsing_functions(file_name: str) -> dict[str, dict[str, str]]:
-    functions = {}
+    functions: dict[str, dict[str, str]] = {}
     functions_list = read_file(file_name)
     try:
         validate_function_list(functions_list)
@@ -178,7 +215,7 @@ def parsing_functions(file_name: str) -> dict[str, dict[str, str]]:
         sys.exit(1)
     for item in functions_list:
         name = item["name"]
-        parameters = {}
+        parameters: dict[str, str] = {}
         for key, value in item["parameters"].items():
             ptype = value["type"]
             parameters[key] = ptype

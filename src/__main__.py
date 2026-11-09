@@ -1,5 +1,14 @@
 import sys
-from src.function_caller import FunctionCaller
+
+try:
+    from src.function_caller import FunctionCaller
+except ModuleNotFoundError as e:
+    print(
+        f'Error: missing module "{e.name}"\n'
+        'Install the dependencies with "make install" or "uv sync" and run'
+        ' the program with "make", "make all", "make run" or "uv run python -m src"'
+    )
+    sys.exit(1)
 
 
 def main() -> None:
