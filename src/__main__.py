@@ -1,12 +1,14 @@
 import sys
+import pydantic.ValidationError
 
 try:
     from src.function_caller import FunctionCaller
 except ModuleNotFoundError as e:
     print(
         f'Error: missing module "{e.name}"\n'
-        'Install the dependencies with "make install" or "uv sync" and run'
-        ' the program with "make", "make all", "make run" or "uv run python -m src"'
+        'Install the dependencies with "make install" or "uv sync"'
+        ' and run the program with "make", "make all", "make run"'
+        ' or "uv run python -m src"'
     )
     sys.exit(1)
 
@@ -22,7 +24,15 @@ def main() -> None:
             path_input = sys.argv[i + 1]
         if sys.argv[i] == "--output":
             path_output = sys.argv[i + 1]
-    fc = FunctionCaller(path_functions, path_input, path_output)
+    try:
+        fc = FunctionCaller(
+            path_functions=path_functions,
+            path_input=path_input,
+            path_output=path_output
+        )
+    except pydantic.ValidationError as e:
+        print(f"Validation error for FunctionCaller: {e}")
+        sys.exit(1)
     fc.call_functions_from_prompts()
 
     # output: list[dict[str, str | dict[str, ParameterType]]] = []

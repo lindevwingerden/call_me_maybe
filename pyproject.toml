@@ -45,6 +45,7 @@ dev = [
 [tool.mypy]
 namespace_packages = false
 exclude = ["llm_sdk/"]
+plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
 module = ["llm_sdk", "llm_sdk.*"]

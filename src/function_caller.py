@@ -1,31 +1,37 @@
 import numpy as np
 import json
 import sys
+from typing import Any
+from pydantic import BaseModel, Field, PrivateAttr
 from pathlib import Path
 from llm_sdk import Small_LLM_Model
 from src.parsing import read_file, parsing_prompts, parsing_functions
 
 
-ParameterType = float | bool | str
+ParameterType = None | float | int | bool | str
 
 
-class FunctionCaller:
-    def __init__(
-            self,
-            path_functions: str,
-            path_input: str,
-            path_output: str
-    ):
+class FunctionCaller(BaseModel):
+    path_functions: str = Field(min_length=1)
+    path_input: str = Field(min_length=1)
+    path_output: str = Field(min_length=1)
+
+    _llm: Small_LLM_Model = PrivateAttr()
+    _functions_crop: dict[str, dict[str, str]] = PrivateAttr()
+    _functions_total: Any = PrivateAttr()
+    _prompts: list[str] = PrivateAttr()
+    _ids_valid_functions: list[list[int]] = PrivateAttr(default_factory=list)
+    _ids_valid_numbers: list[int] = PrivateAttr(default_factory=list)
+    _ids_valid_stops: list[int] = PrivateAttr(default_factory=list)
+    _ids_valid_ints: list[int] = PrivateAttr(default_factory=list)
+    _ids_valid_bools: list[list[int]] = PrivateAttr(default_factory=list)
+    _instructions: str = PrivateAttr()
+
+    def model_post_init(self, __context: Any) -> None:
         self._llm = Small_LLM_Model()
-        self._functions_crop = parsing_functions(path_functions)
-        self._functions_total = read_file(path_functions)
-        self._prompts = parsing_prompts(path_input)
-        self._path_output = path_output
-        self._ids_valid_functions: list[list[int]] = []
-        self._ids_valid_numbers: list[int] = []
-        self._ids_valid_stops: list[int] = []
-        self._ids_valid_ints: list[int] = []
-        self._ids_valid_bools: list[list[int]] = []
+        self._functions_crop = parsing_functions(self.path_functions)
+        self._functions_total = read_file(self.path_functions)
+        self._prompts = parsing_prompts(self.path_input)
         self._instructions = (
             "For the following prompt, choose the correct function name "
             + "from the functions list, select the parameters that belong to "
@@ -285,7 +291,7 @@ class FunctionCaller:
             self,
             output: list[dict[str, str | dict[str, ParameterType]]]
     ) -> None:
-        file_name = Path(self._path_output)
+        file_name = Path(self.path_output)
         try:
             file_name.parent.mkdir(parents=True, exist_ok=True)
             with open(file_name, "w", encoding="utf-8") as f:
