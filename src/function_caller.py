@@ -21,9 +21,8 @@ class FunctionCaller(BaseModel):
     _functions_total: Any = PrivateAttr()
     _prompts: list[str] = PrivateAttr()
     _ids_valid_functions: list[list[int]] = PrivateAttr(default_factory=list)
-    _ids_valid_numbers: list[int] = PrivateAttr(default_factory=list)
-    _ids_valid_stops: list[int] = PrivateAttr(default_factory=list)
-    _ids_valid_ints: list[int] = PrivateAttr(default_factory=list)
+    _ids_valid_numbers: dict[int, str] = PrivateAttr(default_factory=dict)
+    _ids_valid_stops: set[int] = PrivateAttr(default_factory=set)
     _ids_valid_bools: list[list[int]] = PrivateAttr(default_factory=list)
     _instructions: str = PrivateAttr()
 
@@ -40,7 +39,7 @@ class FunctionCaller(BaseModel):
             + '{ "prompt": "What is the sum of 2 and 3?", "name": '
             + '"fn_add_numbers", "parameters": {"a": 2.0, "b": 3.0} }\n\n'
             + "Functions list:\n"
-            + str(self._functions_total) + "\n\n"
+            + json.dumps(self._functions_total) + "\n\n"
             + "Prompt:\n"
         )
 
@@ -53,24 +52,7 @@ class FunctionCaller(BaseModel):
             self.append_output(output, prompt, function_name, parameters)
         self.output_to_file(output)
 
-    def get_ids_valid_ints(self) -> tuple[list[int], list[int]]:
-        vocab_file = read_file(self._llm.get_path_to_vocab_file())
-        chars_valid_numbers = [
-            "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
-            "-", ",", "}"
-        ]
-        ids_valid_numbers = {}
-        for key, value in vocab_file.items():
-            valid = True
-            for char in key:
-                if char not in chars_valid_numbers:
-                    valid = False
-                    break
-            if valid:
-                ids_valid_numbers[key] = value
-        return [int(value) for value in ids_valid_numbers.values()]
-
-    def get_ids_valid_numbers(self) -> tuple[list[int], list[int]]:
+    def get_ids_valid_numbers(self) -> tuple[dict[int, str], set[int]]:
         vocab_file = read_file(self._llm.get_path_to_vocab_file())
         chars_valid_numbers = [
             "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
@@ -91,12 +73,12 @@ class FunctionCaller(BaseModel):
             if valid:
                 ids_valid_numbers[key] = value
         return (
-            [int(value) for value in ids_valid_numbers.values()],
-            [int(value) for value in ids_valid_stops.values()]
+            {int(value): str(key) for key, value in ids_valid_numbers.items()},
+            {int(value) for value in ids_valid_stops.values()}
         )
 
     def create_instructions_for_prompt(self, prompt: str) -> str:
-        instructions = self._instructions + '{"prompt": "' + prompt
+        instructions = self._instructions + '{"prompt": ' + json.dumps(prompt)
         return instructions
 
     def get_function_name(self, instructions: str) -> tuple[str, str]:
@@ -106,7 +88,7 @@ class FunctionCaller(BaseModel):
                 llm.encode(name + '"')[0].tolist()
                 for name in self._functions_crop
             ]
-        instructions = instructions + '", "name": "'
+        instructions = instructions + ', "name": "'
         id_nb = 0
         ids_function_name: list[int] = []
         ids_total = llm.encode(instructions)[0].tolist()
@@ -130,79 +112,84 @@ class FunctionCaller(BaseModel):
         instructions = instructions + function_name
         return function_name, instructions
 
-    def is_complete_number(self, text: str) -> bool:
-        try:
-            float(text)
-            return True
-        except ValueError:
+    def is_begin_of_number(self, text: str, allow_decimal: bool) -> bool:
+        minus_count = 0
+        period_count = 0
+        for i, char in enumerate(text):
+            if char == "-":
+                if i != 0:
+                    return False
+                minus_count = minus_count + 1
+            if char == ".":
+                if not allow_decimal:
+                    return False
+                period_count = period_count + 1
+        if (
+            minus_count > 1
+            or period_count > 1
+        ):
             return False
+        else:
+            return True
 
-    def get_parameter_number(self, instructions: str) -> tuple[float, str]:
+    def is_complete_number(self, text: str, allow_decimal: bool) -> bool:
+        if allow_decimal:
+            try:
+                float(text)
+                return True
+            except ValueError:
+                return False
+        else:
+            try:
+                int(text)
+                return True
+            except ValueError:
+                return False
+
+    def generate_number(
+            self,
+            instructions: str,
+            allow_decimal: bool
+    ) -> tuple[str, str]:
         llm = self._llm
         if len(self._ids_valid_numbers) < 1:
             numbers, stops = self.get_ids_valid_numbers()
             self._ids_valid_numbers = numbers
             self._ids_valid_stops = stops
-        ids_parameter: list[int] = []
+        text = ""
         ids_total = llm.encode(instructions)[0].tolist()
-        valid_ids = self._ids_valid_numbers
-        while (
-            "," not in llm.decode(ids_parameter)
-            and "}" not in llm.decode(ids_parameter)
-            and len(ids_parameter) < 14
-        ):
+        for _ in range(15):
             logits = np.array(llm.get_logits_from_input_ids(ids_total))
             masked = np.full_like(logits, -np.inf)
-            if self.is_complete_number(llm.decode(ids_parameter)):
-                valid_ids = valid_ids + self._ids_valid_stops
-            for valid_id in valid_ids:
-                masked[valid_id] = logits[valid_id]
+            for (token_id, token_text) in self._ids_valid_numbers.items():
+                if self.is_begin_of_number(text + token_text, allow_decimal):
+                    masked[token_id] = logits[token_id]
+            if self.is_complete_number(text, allow_decimal):
+                for stop_id in self._ids_valid_stops:
+                    masked[stop_id] = logits[stop_id]
             next_id = int(np.argmax(masked))
-            ids_parameter.append(next_id)
-            ids_total.append(next_id)
-        parameter = llm.decode(ids_parameter)
-        if "," in parameter:
-            parameter = parameter.split(",")[0]
-        if "}" in parameter:
-            parameter = parameter.split("}")[0]
-        instructions = instructions + parameter
-        parameter_float = float(parameter)
-        return parameter_float, instructions
+            if next_id in self._ids_valid_stops:
+                break
+            else:
+                ids_total.append(next_id)
+                text = text + self._ids_valid_numbers[next_id]
+        instructions = instructions + text
+        return (text, instructions)
 
-    def get_parameter_int(self, instructions: str) -> tuple[float, str]:
-        llm = self._llm
-        if len(self._ids_valid_ints) < 1:
-            self._ids_valid_ints = self.get_ids_valid_ints()
-        ids_parameter: list[int] = []
-        ids_total = llm.encode(instructions)[0].tolist()
-        valid_ids = self._ids_valid_ints
-        while (
-            "," not in llm.decode(ids_parameter)
-            and "}" not in llm.decode(ids_parameter)
-            and len(ids_parameter) < 12
-        ):
-            logits = np.array(llm.get_logits_from_input_ids(ids_total))
-            masked = np.full_like(logits, -np.inf)
-            for valid_id in valid_ids:
-                masked[valid_id] = logits[valid_id]
-            next_id = int(np.argmax(masked))
-            ids_parameter.append(next_id)
-            ids_total.append(next_id)
-        parameter = llm.decode(ids_parameter)
-        if "," in parameter:
-            parameter = parameter.split(",")[0]
-        if "}" in parameter:
-            parameter = parameter.split("}")[0]
-        instructions = instructions + parameter
-        parameter_int = int(parameter)
-        return parameter_int, instructions
+    def get_parameter_number(self, instructions: str) -> tuple[float, str]:
+        text, instructions = self.generate_number(instructions, True)
+        return float(text), instructions
+
+    def get_parameter_int(self, instructions: str) -> tuple[int, str]:
+        text, instructions = self.generate_number(instructions, False)
+        return int(text), instructions
 
     def get_parameter_bool(self, instructions: str) -> tuple[bool, str]:
         llm = self._llm
         if len(self._ids_valid_bools) < 1:
             self._ids_valid_bools = [
                 llm.encode(boolean)[0].tolist()
-                for boolean in ["True,", "False,"]
+                for boolean in ["true,", "false,"]
             ]
         id_nb = 0
         ids_parameter: list[int] = []
@@ -267,9 +254,6 @@ class FunctionCaller(BaseModel):
                 param, instructions = self.get_parameter_bool(instructions)
             elif value == "string":
                 param, instructions = self.get_parameter_string(instructions)
-            else:
-                pass # nog een goede foutmelding schrijven, of foutmelding in parsing?
-                # en misschien nog iets voor als je een value error krijgt in een van deze ifs?
             parameters[key] = param
             instructions = instructions + ", "
         return parameters
