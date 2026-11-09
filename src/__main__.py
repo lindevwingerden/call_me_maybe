@@ -13,7 +13,6 @@ def main() -> None:
             path_input = sys.argv[i + 1]
         if sys.argv[i] == "--output":
             path_output = sys.argv[i + 1]
-    print(path_functions, path_input, path_output)
     fc = FunctionCaller(path_functions, path_input, path_output)
     fc.call_functions_from_prompts()
 

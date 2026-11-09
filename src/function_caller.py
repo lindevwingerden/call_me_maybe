@@ -17,8 +17,8 @@ class FunctionCaller:
             path_output: str
     ):
         self._llm = Small_LLM_Model()
-        self._functions_total = read_file(path_functions)
         self._functions_crop = parsing_functions(path_functions)
+        self._functions_total = read_file(path_functions)
         self._prompts = parsing_prompts(path_input)
         self._path_output = path_output
         self._ids_valid_functions: list[list[int]] = []
