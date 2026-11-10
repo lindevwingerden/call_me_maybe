@@ -4,10 +4,22 @@ from typing import Any
 
 
 class InvalidFileError(ValueError):
+    """Raised when the contents of an input file have an invalid format."""
     pass
 
 
 def read_file(file_name: str) -> Any:
+    """Read a JSON file and return its parsed contents.
+
+    Exits the program with an error message when the file cannot be read
+    or does not contain valid JSON.
+
+    Args:
+        file_name: Path to the JSON file.
+
+    Returns:
+        The parsed JSON content (for example a list or a dict).
+    """
     try:
         with open(file_name, "r", encoding="utf-8") as file:
             content = json.load(file)
@@ -51,6 +63,17 @@ def read_file(file_name: str) -> Any:
 
 
 def validate_prompt_list(content: Any) -> None:
+    """Check that the content of a prompt file has a valid format.
+
+    A valid prompt file contains a list of dicts, where every dict has
+    exactly one key, "prompt", with a non-empty string as its value.
+
+    Args:
+        content: The parsed JSON content of the prompt file.
+
+    Raises:
+        InvalidFileError: If the content does not have the expected format.
+    """
     if not isinstance(content, list):
         raise InvalidFileError("Prompt file does not contain list")
     for index, item in enumerate(content):
@@ -78,6 +101,16 @@ def validate_prompt_list(content: Any) -> None:
 
 
 def parsing_prompts(file_name: str) -> list[str]:
+    """Read and validate a prompt file and return its prompts.
+
+    Exits the program with an error message when the file is invalid.
+
+    Args:
+        file_name: Path to the prompt file.
+
+    Returns:
+        A list with the text of every prompt, in file order.
+    """
     prompt_list = read_file(file_name)
     try:
         validate_prompt_list(prompt_list)
@@ -89,6 +122,18 @@ def parsing_prompts(file_name: str) -> list[str]:
 
 
 def validate_function_list(content: Any) -> None:
+    """Check that the content of a function definition file is valid.
+
+    A valid file contains a non-empty list of dicts. Every dict has
+    exactly the keys "name", "description", "parameters" and "returns",
+    and every function name is unique.
+
+    Args:
+        content: The parsed JSON content of the function definition file.
+
+    Raises:
+        InvalidFileError: If the content does not have the expected format.
+    """
     if not isinstance(content, list):
         raise InvalidFileError(
             "Function definition file does not contain list"
@@ -137,6 +182,16 @@ def validate_function_list(content: Any) -> None:
 
 
 def check_name(function_name: Any, function_names_list: list[str]) -> None:
+    """Check that a function name is a unique, non-empty string.
+
+    Args:
+        function_name: The value of the "name" key of a function.
+        function_names_list: The names of the functions checked so far.
+
+    Raises:
+        InvalidFileError: If the name is not a string, is empty or is
+            already used by another function.
+    """
     if not isinstance(function_name, str):
         raise InvalidFileError(
             'Function name is not a string'
@@ -152,6 +207,14 @@ def check_name(function_name: Any, function_names_list: list[str]) -> None:
 
 
 def check_description(description: Any) -> None:
+    """Check that a function description is a non-empty string.
+
+    Args:
+        description: The value of the "description" key of a function.
+
+    Raises:
+        InvalidFileError: If the description is not a string or is empty.
+    """
     if not isinstance(description, str):
         raise InvalidFileError(
             'Description is not a string'
@@ -163,6 +226,18 @@ def check_description(description: Any) -> None:
 
 
 def check_parameters(parameters: Any) -> None:
+    """Check that the parameters of a function have a valid format.
+
+    The parameters must be a dict that maps non-empty parameter names to
+    a valid type dict (see check_type).
+
+    Args:
+        parameters: The value of the "parameters" key of a function.
+
+    Raises:
+        InvalidFileError: If the parameters are not a dict, a parameter
+            name is empty or a parameter has an invalid type.
+    """
     if not isinstance(parameters, dict):
         raise InvalidFileError(
             'Parameters are not a dict'
@@ -181,6 +256,19 @@ def check_parameters(parameters: Any) -> None:
 
 
 def check_type(type_dict: Any) -> None:
+    """Check that a type dict has a valid format.
+
+    A valid type dict has exactly one key, "type", with one of the
+    supported types as its value: "null", "number", "integer",
+    "boolean" or "string".
+
+    Args:
+        type_dict: The type dict of a parameter or of a return value.
+
+    Raises:
+        InvalidFileError: If the type dict has an invalid format or
+            contains an unsupported type.
+    """
     valid_types = ["null", "number", "integer", "boolean", "string"]
     if not isinstance(type_dict, dict):
         raise InvalidFileError(
@@ -206,6 +294,18 @@ def check_type(type_dict: Any) -> None:
 
 
 def parsing_functions(file_name: str) -> dict[str, dict[str, str]]:
+    """Read and validate a function definition file.
+
+    Exits the program with an error message when the file is invalid.
+
+    Args:
+        file_name: Path to the function definition file.
+
+    Returns:
+        A dict that maps every function name to a dict of its parameters,
+        which in turn maps every parameter name to its type, for example
+        {"fn_add_numbers": {"a": "number", "b": "number"}}.
+    """
     functions: dict[str, dict[str, str]] = {}
     functions_list = read_file(file_name)
     try:

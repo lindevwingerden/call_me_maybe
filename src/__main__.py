@@ -15,6 +15,11 @@ except ModuleNotFoundError as e:
 
 
 def argument_error(message: str) -> NoReturn:
+    """Print an argument error with usage information and exit.
+
+    Args:
+        message: Description of what is wrong with the arguments.
+    """
     print(
         f"Argument error: {message}\n"
         "Usage: uv run python -m src [--functions_definition"
@@ -25,6 +30,11 @@ def argument_error(message: str) -> NoReturn:
 
 
 def main() -> None:
+    """Parse the command line arguments and run the function caller.
+
+    Paths that are not given on the command line fall back to the
+    default paths in the data directory.
+    """
     path_functions = "data/input/functions_definition.json"
     path_input = "data/input/function_calling_tests.json"
     path_output = "data/output/function_calling_results.json"
@@ -69,22 +79,6 @@ def main() -> None:
         print(f"Validation error for FunctionCaller: {e}", file=sys.stderr)
         sys.exit(1)
     fc.call_functions_from_prompts()
-
-    # output: list[dict[str, str | dict[str, ParameterType]]] = []
-    # for prompt in fc.prompts:
-    #     instructions = fc.create_instructions_for_prompt(prompt)
-    #     function_name, instructions = fc.get_function_name(instructions)
-    #     parameters = fc.get_parameters(instructions, function_name)
-    #     fc.append_output(output, prompt, function_name, parameters)
-    #     print(f"Current output: {output}\n")
-    # print(output)
-
-    # prompt = fc.prompts[2]
-    # instructions = fc.create_instructions_for_prompt(prompt)
-    # function_name, instructions = fc.get_function_name(instructions)
-    # parameters = fc.get_parameters(instructions, function_name)
-    # fc.append_output(output, prompt, function_name, parameters)
-    # print(f"Output: {output}\n")
 
 
 if __name__ == "__main__":

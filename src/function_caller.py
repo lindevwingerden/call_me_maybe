@@ -12,6 +12,20 @@ ParameterType = None | float | int | bool | str
 
 
 class FunctionCaller(BaseModel):
+    """Choose a function and its arguments for every prompt using an LLM.
+
+    The paths are validated by pydantic when the object is created. After
+    validation, the language model is loaded and the input files are read.
+    The model is only allowed to generate valid output: at every step, the
+    logits of all tokens that would lead to invalid output are set to
+    minus infinity (constrained decoding).
+
+    Attributes:
+        path_functions: Path to the function definition file.
+        path_input: Path to the file with the prompts.
+        path_output: Path to the file the results are written to.
+    """
+
     path_functions: str = Field(min_length=1)
     path_input: str = Field(min_length=1)
     path_output: str = Field(min_length=1)
@@ -27,6 +41,13 @@ class FunctionCaller(BaseModel):
     _instructions: str = PrivateAttr()
 
     def model_post_init(self, __context: Any) -> None:
+        """Load the model, read the input files and build the instructions.
+
+        Called automatically by pydantic after the fields are validated.
+
+        Args:
+            __context: The validation context passed by pydantic (unused).
+        """
         self._llm = Small_LLM_Model()
         self._functions_crop = parsing_functions(self.path_functions)
         self._functions_total = read_file(self.path_functions)
@@ -44,15 +65,33 @@ class FunctionCaller(BaseModel):
         )
 
     def call_functions_from_prompts(self) -> None:
+        """Generate a function call for every prompt and save the results.
+
+        For every prompt, the function name and its parameters are
+        generated, and all results are written to the output file.
+        """
         output: list[dict[str, str | dict[str, ParameterType]]] = []
         for prompt in self._prompts:
-            instructions = self.create_instructions_for_prompt(prompt)
-            function_name, instructions = self.get_function_name(instructions)
-            parameters = self.get_parameters(instructions, function_name)
-            self.append_output(output, prompt, function_name, parameters)
+            try:
+                instructions = self.create_instructions_for_prompt(prompt)
+                func_name, instructions = self.get_function_name(instructions)
+                parameters = self.get_parameters(instructions, func_name)
+                self.append_output(output, prompt, func_name, parameters)
+            except RuntimeError as e:
+                print(f'Error for prompt "{prompt}": {e}', file=sys.stderr)
+                sys.exit(1)
         self.output_to_file(output)
 
     def get_ids_valid_numbers(self) -> tuple[dict[int, str], set[int]]:
+        """Find the tokens that can be used to generate a number.
+
+        Number tokens only contain digits, "-" and ".". Stop tokens are
+        exactly "," or "}" and mark the end of a number.
+
+        Returns:
+            A tuple with a dict that maps the id of every number token to
+            its text, and a set with the ids of the stop tokens.
+        """
         vocab_file = read_file(self._llm.get_path_to_vocab_file())
         chars_valid_numbers = [
             "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
@@ -78,10 +117,32 @@ class FunctionCaller(BaseModel):
         )
 
     def create_instructions_for_prompt(self, prompt: str) -> str:
+        """Add a prompt to the general instructions for the model.
+
+        Args:
+            prompt: The prompt to generate a function call for.
+
+        Returns:
+            The instructions, ending with the start of the JSON object
+            that contains the prompt.
+        """
         instructions = self._instructions + '{"prompt": ' + json.dumps(prompt)
         return instructions
 
     def get_function_name(self, instructions: str) -> tuple[str, str]:
+        """Let the model choose a function name with constrained decoding.
+
+        At every step, only tokens that continue one of the existing
+        function names are allowed, so the model can only choose a name
+        from the function definition file.
+
+        Args:
+            instructions: The instructions for the model so far.
+
+        Returns:
+            A tuple with the chosen function name and the updated
+            instructions.
+        """
         llm = self._llm
         if len(self._ids_valid_functions) < 1:
             self._ids_valid_functions = [
@@ -113,6 +174,16 @@ class FunctionCaller(BaseModel):
         return function_name, instructions
 
     def is_begin_of_number(self, text: str, allow_decimal: bool) -> bool:
+        """Check if a text can still become a valid number.
+
+        Args:
+            text: The text generated so far.
+            allow_decimal: Whether a decimal point is allowed.
+
+        Returns:
+            True if the text contains at most one "-" (only at the start)
+            and at most one "." (only if allowed), otherwise False.
+        """
         minus_count = 0
         period_count = 0
         for i, char in enumerate(text):
@@ -133,6 +204,16 @@ class FunctionCaller(BaseModel):
             return True
 
     def is_complete_number(self, text: str, allow_decimal: bool) -> bool:
+        """Check if a text is a complete, valid number.
+
+        Args:
+            text: The text generated so far.
+            allow_decimal: Whether the text is checked as a float (True)
+                or as an integer (False).
+
+        Returns:
+            True if the text can be converted to a number, otherwise False.
+        """
         if allow_decimal:
             try:
                 float(text)
@@ -151,6 +232,21 @@ class FunctionCaller(BaseModel):
             instructions: str,
             allow_decimal: bool
     ) -> tuple[str, str]:
+        """Let the model generate a number with constrained decoding.
+
+        At every step, only number tokens that keep the text the start of
+        a valid number are allowed. Stop tokens are only allowed once the
+        text is a complete number, and generation stops when the model
+        chooses one.
+
+        Args:
+            instructions: The instructions for the model so far.
+            allow_decimal: Whether the number may contain a decimal point.
+
+        Returns:
+            A tuple with the text of the generated number and the updated
+            instructions.
+        """
         llm = self._llm
         if len(self._ids_valid_numbers) < 1:
             numbers, stops = self.get_ids_valid_numbers()
@@ -158,7 +254,7 @@ class FunctionCaller(BaseModel):
             self._ids_valid_stops = stops
         text = ""
         ids_total = llm.encode(instructions)[0].tolist()
-        for _ in range(15):
+        for _ in range(50):
             logits = np.array(llm.get_logits_from_input_ids(ids_total))
             masked = np.full_like(logits, -np.inf)
             for (token_id, token_text) in self._ids_valid_numbers.items():
@@ -173,18 +269,53 @@ class FunctionCaller(BaseModel):
             else:
                 ids_total.append(next_id)
                 text = text + self._ids_valid_numbers[next_id]
+        if not self.is_complete_number(text, allow_decimal):
+            raise RuntimeError(
+                'Could not generate a valid number within 50 tokens,'
+                f' generated so far: "{text}"'
+            )
         instructions = instructions + text
         return (text, instructions)
 
     def get_parameter_number(self, instructions: str) -> tuple[float, str]:
+        """Generate a parameter of type "number".
+
+        Args:
+            instructions: The instructions for the model so far.
+
+        Returns:
+            A tuple with the generated number as a float and the updated
+            instructions.
+        """
         text, instructions = self.generate_number(instructions, True)
         return float(text), instructions
 
     def get_parameter_int(self, instructions: str) -> tuple[int, str]:
+        """Generate a parameter of type "integer".
+
+        Args:
+            instructions: The instructions for the model so far.
+
+        Returns:
+            A tuple with the generated number as an int and the updated
+            instructions.
+        """
         text, instructions = self.generate_number(instructions, False)
         return int(text), instructions
 
     def get_parameter_bool(self, instructions: str) -> tuple[bool, str]:
+        """Generate a parameter of type "boolean" with constrained decoding.
+
+        At every step, only tokens that continue to "true," or "false," are
+        allowed.
+
+        Args:
+            instructions: The instructions for the model so far.
+
+        Returns:
+            A tuple with the generated boolean and the updated
+            instructions.
+        """
         llm = self._llm
         if len(self._ids_valid_bools) < 1:
             self._ids_valid_bools = [
@@ -209,13 +340,25 @@ class FunctionCaller(BaseModel):
         parameter = llm.decode(ids_parameter)
         parameter = parameter.split(",")[0]
         instructions = instructions + parameter
-        if parameter == "True":
+        if parameter == "true":
             parameter_bool = True
         else:
             parameter_bool = False
         return parameter_bool, instructions
 
     def get_parameter_string(self, instructions: str) -> tuple[str, str]:
+        """Generate a parameter of type "string".
+
+        The model generates tokens freely until it produces a closing
+        quote, or until the maximum length is reached.
+
+        Args:
+            instructions: The instructions for the model so far.
+
+        Returns:
+            A tuple with the generated string and the updated
+            instructions.
+        """
         llm = self._llm
         instructions = instructions + '"'
         ids_parameter: list[int] = []
@@ -237,6 +380,15 @@ class FunctionCaller(BaseModel):
             self, instructions: str,
             function_name: str
     ) -> dict[str, ParameterType]:
+        """Generate a value for every parameter of a function.
+
+        Args:
+            instructions: The instructions for the model so far.
+            function_name: The name of the chosen function.
+
+        Returns:
+            A dict that maps every parameter name to its generated value.
+        """
         instructions = instructions + '", "parameters": {'
         parameters: dict[str, ParameterType] = {}
         valid_parameters = self._functions_crop[function_name]
@@ -265,6 +417,14 @@ class FunctionCaller(BaseModel):
             function_name: str,
             parameters: dict[str, ParameterType]
     ) -> None:
+        """Add the result for one prompt to the output list.
+
+        Args:
+            output: The list with the results so far.
+            prompt: The original prompt.
+            function_name: The chosen function name.
+            parameters: The generated parameter values.
+        """
         current: dict[str, str | dict[str, ParameterType]] = {}
         current["prompt"] = prompt
         current["name"] = function_name
@@ -275,6 +435,14 @@ class FunctionCaller(BaseModel):
             self,
             output: list[dict[str, str | dict[str, ParameterType]]]
     ) -> None:
+        """Write the results to the output file as JSON.
+
+        Creates the output directory if it does not exist yet. Exits the
+        program with an error message when the file cannot be written.
+
+        Args:
+            output: The list with the results for all prompts.
+        """
         file_name = Path(self.path_output)
         try:
             file_name.parent.mkdir(parents=True, exist_ok=True)
